@@ -74,11 +74,11 @@ using namespace NativeScript;
 }
 
 - (void)scheduleInRunLoop:(NSRunLoop*)runLoop forMode:(NSString*)mode {
-    self->_globalObject->setMicrotaskRunLoopAndMode([runLoop getCFRunLoop], mode);
+    CFRunLoopAddSource(runLoop.getCFRunLoop, self->_globalObject->microtaskRunLoopSource(), (CFStringRef)mode);
 }
 
 - (void)removeFromRunLoop:(NSRunLoop*)runLoop forMode:(NSString*)mode {
-    self->_globalObject->setMicrotaskRunLoopAndMode(nullptr, nullptr);
+    CFRunLoopRemoveSource(runLoop.getCFRunLoop, self->_globalObject->microtaskRunLoopSource(), (CFStringRef)mode);
 }
 
 - (JSGlobalContextRef)globalContext {

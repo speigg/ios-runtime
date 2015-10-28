@@ -107,6 +107,12 @@ static EncodedJSValue JSC_HOST_CALL collectGarbage(ExecState* execState) {
     return JSValue::encode(jsUndefined());
 }
 
+static void microtaskRunLoopSourcePerformWork(void* context) {
+    GlobalObject* self = static_cast<GlobalObject*>(context);
+    JSLockHolder lockHolder(self->vm());
+    self->drainMicrotasks();
+}
+
 void GlobalObject::finishCreation(WTF::String applicationPath, VM& vm) {
     Base::finishCreation(vm);
 
@@ -172,6 +178,9 @@ void GlobalObject::finishCreation(WTF::String applicationPath, VM& vm) {
     NSObjectConstructor->putDirect(vm, vm.propertyNames->toString, constructFunction(globalExec, this, staticDescriptionFunctionArgs), DontEnum);
 
     NSObjectConstructor->setPrototype(vm, NSObjectPrototype);
+
+    CFRunLoopSourceContext context = { 0, this, 0, 0, 0, 0, 0, 0, 0, microtaskRunLoopSourcePerformWork };
+    _microtaskRunLoopSource = WTF::adoptCF(CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &context));
 }
 
 void GlobalObject::visitChildren(JSCell* cell, SlotVisitor& visitor) {
@@ -392,14 +401,16 @@ ObjCProtocolWrapper* GlobalObject::protocolWrapperFor(Protocol* aProtocol) {
 }
 
 void GlobalObject::queueTaskToEventLoop(const JSGlobalObject* globalObject, WTF::PassRefPtr<Microtask> task) {
-    auto global = jsCast<const GlobalObject*>(globalObject);
-    CFRunLoopRef runLoop = global->_microtaskRunLoop.get() ?: CFRunLoopGetCurrent();
-    CFTypeRef mode = global->_microtaskRunLoopMode.get() ?: kCFRunLoopCommonModes;
+    GlobalObject* self = jsCast<GlobalObject*>(const_cast<JSGlobalObject*>(globalObject));
+    self->_microtasksQueue.append(task);
+    CFRunLoopSourceSignal(self->_microtaskRunLoopSource.get());
+}
 
-    CFRunLoopPerformBlock(runLoop, mode, ^{
-      JSLockHolder lock(globalObject->vm());
-      task->run(const_cast<JSGlobalObject*>(globalObject)->globalExec());
-    });
-    CFRunLoopWakeUp(runLoop);
+void GlobalObject::drainMicrotasks() {
+    while (!this->_microtasksQueue.isEmpty()) {
+        this->_microtasksQueue.takeFirst()->run(this->globalExec());
+    }
+}
+
 }
 }

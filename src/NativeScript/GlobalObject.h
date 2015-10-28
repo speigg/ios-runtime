@@ -135,10 +135,11 @@ public:
         return this->_fastEnumerationIteratorStructure.get();
     }
 
-    void setMicrotaskRunLoopAndMode(CFRunLoopRef runLoop, CFTypeRef mode) {
-        this->_microtaskRunLoop = runLoop;
-        this->_microtaskRunLoopMode = mode;
+    CFRunLoopSourceRef microtaskRunLoopSource() const {
+        return this->_microtaskRunLoopSource.get();
     }
+
+    void drainMicrotasks();
 
     WTF::Deque<std::map<std::string, std::unique_ptr<ReleasePoolBase>>>& releasePools() {
         return this->_releasePools;
@@ -159,14 +160,14 @@ private:
 
     static void destroy(JSC::JSCell* cell);
 
+    WTF::Deque<WTF::RefPtr<JSC::Microtask>> _microtasksQueue;
     static void queueTaskToEventLoop(const JSC::JSGlobalObject* globalObject, WTF::PassRefPtr<JSC::Microtask> task);
 
     std::unique_ptr<GlobalObjectInspectorController> _inspectorController;
 
     WTF::String _applicationPath;
 
-    WTF::RetainPtr<CFRunLoopRef> _microtaskRunLoop;
-    WTF::RetainPtr<CFTypeRef> _microtaskRunLoopMode;
+    WTF::RetainPtr<CFRunLoopSourceRef> _microtaskRunLoopSource;
 
     JSC::WriteBarrier<FFICallPrototype> _ffiCallPrototype;
     JSC::WriteBarrier<JSC::Structure> _objCMethodCallStructure;
