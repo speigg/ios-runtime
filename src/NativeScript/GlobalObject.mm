@@ -16,6 +16,7 @@
 #include <JavaScriptCore/JSGlobalObjectFunctions.h>
 #include <JavaScriptCore/runtime/JSConsole.h>
 #include <JavaScriptCore/inspector/JSGlobalObjectConsoleClient.h>
+#include <JavaScriptCore/JSInternalPromiseDeferred.h>
 #include "ObjCProtocolWrapper.h"
 #include "ObjCConstructorNative.h"
 #include "ObjCPrototype.h"
@@ -76,7 +77,7 @@ const ClassInfo GlobalObject::s_info = { "NativeScriptGlobal", &Base::s_info, 0,
 
 const unsigned GlobalObject::StructureFlags = OverridesGetOwnPropertySlot | Base::StructureFlags;
 
-const GlobalObjectMethodTable GlobalObject::globalObjectMethodTable = { &allowsAccessFrom, &supportsProfiling, &supportsRichSourceInfo, &shouldInterruptScript, &javaScriptRuntimeFlags, &queueTaskToEventLoop, &shouldInterruptScriptBeforeTimeout, 0, 0, 0, 0, 0 };
+const GlobalObjectMethodTable GlobalObject::globalObjectMethodTable = { &allowsAccessFrom, &supportsProfiling, &supportsRichSourceInfo, &shouldInterruptScript, &javaScriptRuntimeFlags, &queueTaskToEventLoop, &shouldInterruptScriptBeforeTimeout, &moduleLoaderResolve, &moduleLoaderFetch, 0, 0, 0 };
 
 GlobalObject::GlobalObject(VM& vm, Structure* structure)
     : JSGlobalObject(vm, structure, &GlobalObject::globalObjectMethodTable)
@@ -412,5 +413,81 @@ void GlobalObject::drainMicrotasks() {
     }
 }
 
+JSInternalPromise* GlobalObject::moduleLoaderResolve(JSGlobalObject* globalObject, ExecState* execState, JSValue keyValue, JSValue referrerValue) {
+    JSInternalPromiseDeferred* deferred = JSInternalPromiseDeferred::create(execState, globalObject);
+
+    if (keyValue.isSymbol()) {
+        return deferred->resolve(execState, keyValue);
+    }
+
+    NSString* path = keyValue.toWTFString(execState);
+    if (JSC::Exception* e = execState->exception()) {
+        execState->clearException();
+        return deferred->reject(execState, e);
+    }
+
+    GlobalObject* self = jsCast<GlobalObject*>(globalObject);
+
+    NSString* absolutePath = path;
+    if (!path.isAbsolutePath) {
+        if ([path characterAtIndex:0] != '.') {
+            absolutePath = [static_cast<NSString*>(self->applicationPath()) stringByAppendingPathComponent:@"app/tns_modules"];
+        } else if (referrerValue.isString()) {
+            absolutePath = [[static_cast<NSString*>(referrerValue.toWTFString(execState)) stringByReplacingOccurrencesOfString:@"file://" withString:@""] stringByDeletingLastPathComponent];
+        } else {
+            absolutePath = [static_cast<NSString*>(self->applicationPath()) stringByAppendingPathComponent:@"app"];
+        }
+
+        absolutePath = [[absolutePath stringByAppendingPathComponent:path] stringByStandardizingPath];
+    }
+
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSString* absoluteFilePath = [absolutePath stringByAppendingPathExtension:@"js"];
+
+    BOOL isDirectory = false;
+    if (![fileManager fileExistsAtPath:absoluteFilePath] && [fileManager fileExistsAtPath:absolutePath isDirectory:&isDirectory]) {
+        if (!isDirectory) {
+            return deferred->reject(execState, createError(execState, WTF::String::format("Expected '%s' to be a directory", absolutePath.UTF8String)));
+        }
+
+        if (referrerValue.isUndefined()) {
+            NSString* bootstrapPath = [absolutePath stringByAppendingPathComponent:@"bootstrap.js"];
+            if ([fileManager fileExistsAtPath:bootstrapPath]) {
+                absoluteFilePath = bootstrapPath;
+            } else {
+                absoluteFilePath = [absolutePath stringByAppendingPathComponent:@"index.js"];
+            }
+        }
+    }
+
+    if ([absoluteFilePath hasPrefix:self->applicationPath()]) {
+        absoluteFilePath = [absoluteFilePath substringFromIndex:self->applicationPath().length()];
+    }
+
+    absoluteFilePath = [NSString stringWithFormat:@"file://%@", absoluteFilePath];
+    return deferred->resolve(execState, jsString(execState, absoluteFilePath));
+}
+
+JSInternalPromise* GlobalObject::moduleLoaderFetch(JSGlobalObject* globalObject, ExecState* execState, JSValue keyValue) {
+    JSInternalPromiseDeferred* deferred = JSInternalPromiseDeferred::create(execState, globalObject);
+
+    NSString* modulePath = keyValue.toWTFString(execState);
+    if (JSC::Exception* e = execState->exception()) {
+        execState->clearException();
+        return deferred->reject(execState, e);
+    }
+
+    modulePath = [modulePath stringByReplacingOccurrencesOfString:@"file://" withString:@""];
+
+    GlobalObject* self = jsCast<GlobalObject*>(globalObject);
+    modulePath = [static_cast<NSString*>(self->applicationPath()) stringByAppendingPathComponent:modulePath];
+
+    NSError* error = nil;
+    NSString* moduleContent = [NSString stringWithContentsOfFile:modulePath encoding:NSUTF8StringEncoding error:&error];
+    if (error) {
+        return deferred->reject(execState, NativeScript::toValue(execState, error));
+    }
+
+    return deferred->resolve(execState, jsString(execState, moduleContent));
 }
 }

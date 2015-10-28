@@ -2,7 +2,7 @@ function getURLSession() {
     return NSURLSession.sessionWithConfigurationDelegateDelegateQueue(NSURLSessionConfiguration.defaultSessionConfiguration(), null, NSOperationQueue.mainQueue());
 }
 
-function fetch(path) {
+export function fetch(path) {
     var url = NSURL.URLWithString(path);
     return new Promise((resolve, reject) => {
         var session = getURLSession();
@@ -17,6 +17,3 @@ function fetch(path) {
         session.finishTasksAndInvalidate();
     });
 }
-
-exports.getURLSession = getURLSession;
-exports.fetch = fetch;

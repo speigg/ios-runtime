@@ -33,6 +33,9 @@
 #include <JavaScriptCore/ScriptArguments.h>
 #include <JavaScriptCore/ScriptCallStack.h>
 #include <JavaScriptCore/ScriptCallStackFactory.h>
+#include <JavaScriptCore/ModuleLoaderObject.h>
+#include <JavaScriptCore/JSModuleRecord.h>
+#include <JavaScriptCore/JSMapIterator.h>
 
 using namespace JSC;
 using namespace Inspector;
@@ -48,11 +51,16 @@ GlobalObjectDebuggerAgent::GlobalObjectDebuggerAgent(JSAgentContext& context, In
 void GlobalObjectDebuggerAgent::enable(ErrorString& errorString) {
     InspectorDebuggerAgent::enable(errorString);
 
-    ResourceManager& resourceManager = ResourceManager::getInstance();
-    WTF::HashMap<WTF::String, WTF::RefPtr<JSC::SourceProvider>>& sourceProviders = resourceManager.sourceProviders();
+    JSValue registry = this->m_globalObject->moduleLoader()->get(this->m_globalObject->globalExec(), Identifier::fromString(&this->m_globalObject->vm(), WTF::ASCIILiteral("registry")));
+    JSMapIterator* registryIterator = JSMapIterator::create(this->m_globalObject->vm(), this->m_globalObject->mapIteratorStructure(), jsCast<JSMap*>(registry), MapIterateKeyValue);
 
-    for (auto resource : sourceProviders) {
-        m_globalObject->debugger()->sourceParsed(m_globalObject->globalExec(), resource.value.get(), -1, WTF::emptyString());
+    JSValue moduleKey, moduleEntry;
+    PropertyName modulePropertyName(Identifier::fromString(&this->m_globalObject->vm(), WTF::ASCIILiteral("module")));
+    while (registryIterator->nextKeyValue(moduleKey, moduleEntry)) {
+        JSValue recordValue = moduleEntry.get(this->m_globalObject->globalExec(), modulePropertyName);
+        if (JSModuleRecord* record = jsDynamicCast<JSModuleRecord*>(recordValue)) {
+            this->m_globalObject->debugger()->sourceParsed(this->m_globalObject->globalExec(), record->sourceCode().provider(), -1, WTF::emptyString());
+        }
     }
 }
 
