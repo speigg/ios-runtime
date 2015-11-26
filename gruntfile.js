@@ -85,7 +85,7 @@ module.exports = function(grunt) {
                     dest: "<%= outPackageDir %>/WebInspectorUI/Safari",
                     expand: true
                 }, {
-                    cwd: "<%= srcDir %>/build/inspector/",
+                    cwd: "<%= srcDir %>/cmake-build/Inspector",
                     src: "NativeScript Inspector.zip",
                     dest: "<%= outPackageDir %>/WebInspectorUI/",
                     expand: true
@@ -132,6 +132,15 @@ module.exports = function(grunt) {
                 }
             },
 
+            Inspector: {
+                command: './build/scripts/build-inspector.sh',
+                options: {
+                    execOptions: {
+                        maxBuffer: Infinity
+                    }
+                }
+            },
+
             getGitSHA: {
                 command: "git rev-parse HEAD",
                 options: {
@@ -169,6 +178,7 @@ module.exports = function(grunt) {
     grunt.registerTask("package", [
         "clean:outDist",
         "shell:NativeScript",
+        "shell:Inspector",
         "mkdir:outPackageFramework",
         "copy:packageComponents",
         "shell:getGitSHA",
