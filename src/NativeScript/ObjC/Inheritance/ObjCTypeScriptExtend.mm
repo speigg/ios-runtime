@@ -61,7 +61,7 @@ EncodedJSValue ObjCTypeScriptExtendFunction(ExecState* execState) {
     WTF::String name = typeScriptConstructor->name(execState);
 
     JSValue baseConstructor = execState->argument(1);
-    __block std::unique_ptr<ObjCClassBuilder> classBuilder = std::make_unique<ObjCClassBuilder>(execState, baseConstructor, constructEmptyObject(execState), name);
+    __block std::unique_ptr<ObjCClassBuilder> classBuilder = std::make_unique<ObjCClassBuilder>(execState, baseConstructor, constructEmptyObject(execState));
     if (execState->hadException()) {
         return JSValue::encode(jsUndefined());
     }
